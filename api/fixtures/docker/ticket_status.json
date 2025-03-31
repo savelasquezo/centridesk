@@ -1,0 +1,50 @@
+[
+  {
+    "model": "api.ticketstatus",
+    "pk": 1,
+    "fields": {
+      "name": "new",
+      "sort": 1
+    }
+  },
+  {
+    "model": "api.ticketstatus",
+    "pk": 2,
+    "fields": {
+      "name": "open",
+      "sort": 2
+    }
+  },
+  {
+    "model": "api.ticketstatus",
+    "pk": 3,
+    "fields": {
+      "name": "pending",
+      "sort": 3
+    }
+  },
+  {
+    "model": "api.ticketstatus",
+    "pk": 4,
+    "fields": {
+      "name": "hold",
+      "sort": 4
+    }
+  },
+  {
+    "model": "api.ticketstatus",
+    "pk": 5,
+    "fields": {
+      "name": "solved",
+      "sort": 5
+    }
+  },
+  {
+    "model": "api.ticketstatus",
+    "pk": 6,
+    "fields": {
+      "name": "closed",
+      "sort": 6
+    }
+  }
+]

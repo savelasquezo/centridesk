@@ -1,0 +1,96 @@
+{{- $root := . }}
+{{- range $name, $consumer := .Values.consumers }}
+{{- if $consumer.enabled }}
+{{- $root := set $root "consumerName" $name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s-%s" (include "centridesk-backend.fullname" $root) $name | trunc -63 }}
+  namespace: {{ $root.Release.Namespace }}    
+  labels:
+    {{- include "centridesk-backend.labels" $root | nindent 4 }}
+spec:
+  {{- if not $root.Values.autoscaling.enabled }}
+  replicas: {{ $root.Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "centridesk-backend.selectorLabels" $root | nindent 6 }}
+  template:
+    metadata:
+      {{- with $root.Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "centridesk-backend.labels" $root | nindent 8 }}
+        {{- with $root.Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "centridesk-backend.serviceAccountName" $root }}
+      securityContext:
+        {{- toYaml $root.Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ $name }}
+          {{- with $consumer.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $consumer.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml $root.Values.securityContext | nindent 12 }}
+          image: "{{ $root.Values.image.repository }}:{{ $root.Values.image.tag | default $root.Chart.AppVersion }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          {{- if or $root.Values.env $consumer.env }}
+          env:
+          {{- range $pkey, $pval := $root.Values.env }}
+          - name: {{ $pkey }}
+            value: {{ quote $pval }}
+          {{- end }}
+          {{- range $pkey, $pval := $consumer.env }}
+          - name: {{ $pkey }}
+            value: {{ quote $pval }}
+          {{- end }}
+          {{- end }}
+          {{- with $consumer.resources }}
+          resources:
+            {{- toYaml $consumer.resources | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+          - mountPath: /code/config.json
+            name: config-json
+            subPath: config.json
+          {{- with $consumer.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: config-json
+          secret:
+            defaultMode: 420
+            secretName: {{ include "centridesk-backend.fullname" $root }}-config
+      {{- with $consumer.volumes }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $consumer.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $consumer.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $consumer.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- end }}

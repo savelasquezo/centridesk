@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrations-{{ include "centridesk-backend.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "centridesk-backend.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook-delete-policy": "hook-failed"
+    "helm.sh/hook": "pre-install"
+    "helm.sh/hook-weight": "10"
+spec:
+  template:
+    spec:
+      containers:
+      - name: "migrations-{{ .Chart.Name }}"
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        {{- with .Values.jobCommands.command }}
+        command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        volumeMounts:
+        - mountPath: /code/config.json
+          name: config-json
+          subPath: config.json
+        {{- with .Values.volumeMounts }}
+          {{- toYaml . | nindent 12 }}
+        {{- end }}
+        {{- if .Values.env }}
+        env:
+        {{- range $pkey, $pval := .Values.env }}
+        - name: {{ $pkey }}
+          value: {{ quote $pval }}
+        {{- end }}
+        {{- end }}
+      restartPolicy: Never
+      volumes:
+        - name: config-json
+          secret:
+            defaultMode: 420
+            secretName: {{ include "centridesk-backend.fullname" . }}-config
+      {{- with .Values.volumes }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

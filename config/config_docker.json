@@ -1,0 +1,115 @@
+{
+  "settings": {
+    "project": "centridesk",
+    "env": "local",
+    "debug": true,
+    "allowed_hosts": [
+      "localhost",
+      "127.0.0.1",
+      "0.0.0.0",
+      "backcentridesk",
+      ".ngrok.io",
+      ".centribal.local"
+    ]
+  },
+  "db": {
+    "pool": {
+      "name": "centridesk",
+      "size": 3,
+      "use_pure": false
+    },
+    "centridesk_admin": {
+      "pool": false,
+      "master": {
+        "user": "root",
+        "password": "Bimyou123!",
+        "dbname": "centridesk_shared",
+        "host": "db",
+        "port": 3306
+      },
+      "slave": {
+        "user": "root",
+        "password": "Bimyou123!",
+        "dbname": "centridesk_shared",
+        "host": "db",
+        "port": 3306
+      }
+    },
+    "centridesk": {
+      "pool": false,
+      "master": {
+        "user": "centridesk_user",
+        "password": "P?Qr,8?;Lu,g<23",
+        "dbname": "centridesk_shared",
+        "host": "db",
+        "port": 3306
+      },
+      "slave": {
+        "user": "centridesk_user",
+        "password": "P?Qr,8?;Lu,g<23",
+        "dbname": "centridesk_shared",
+        "host": "db",
+        "port": 3306
+      }
+    },
+    "centribot": {
+      "pool": false,
+      "master": {
+        "user": "centribot",
+        "password": "Bimyou123!",
+        "dbname": "centribot",
+        "host": "db",
+        "port": 3306
+      },
+      "slave": {
+        "user": "centribot",
+        "password": "Bimyou123!",
+        "dbname": "centribot",
+        "host": "db",
+        "port": 3306
+      }
+    }
+  },
+  "platform": {
+    "kubernetes":false,
+    "rabbitmq": {
+      "host": "rabbitmq",
+      "port": 5672,
+      "vhost": "/",
+      "user": "centribotmq",
+      "password": "Centribot.Mq.2020!"
+    },
+    "activemq": {
+      "server": "platform-activemq",
+      "port": "5672",
+      "username": "admin",
+      "password": "admin",
+      "transport": "",
+      "durability": true
+    },
+    "centribot": {
+      "url": "http://backcentribot:8000",
+      "platform": "centridesk"
+    },
+    "websockets": {
+      "url": "ws://websockets:3000"
+    },
+    "centridesk": {
+      "url": "http://backcentridesk:8085",
+      "platform": "centridesk"
+    }
+  },
+  "providers": {
+    "aws": {
+      "buckets": {
+        "key_id": "AKIAUBBNN5W3ERX5R5UT",
+        "key": "e1avhL5Te6l9lcqgKiFtexT5r7kHh02v6kmOvZw8"
+      }
+    }
+  },
+  "logs": {
+    "jira_create": false,
+    "log_json_format": false,
+    "log_level": "INFO"
+  }
+}

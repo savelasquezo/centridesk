@@ -1,0 +1,108 @@
+{
+  "settings": {
+    "project": "centridesk",
+    "env": "pre",
+    "debug": true,
+    "allowed_hosts": [
+      "*",
+      "backcentrideskpre.centribal.com",
+      "backcentridesk.pre.centribal.com",
+      "centridesk-backend",
+      "centridesk-backend.preproduction-platform",
+      "centridesk-backend.preproduction-platform.svc",
+      "centridesk-backend.preproduction-platform.svc.cluster.local"
+    ]
+  },
+  "db": {
+    "pool": {
+      "name": "centridesk",
+      "size": 2,
+      "use_pure": false
+    },
+    "centridesk_admin": {
+      "pool": false,
+      "master": {
+        "user": "centribot",
+        "password": "Centribot2020",
+        "dbname": "centridesk_shared",
+        "host": "tf-centribal-pre-centribot-db.cluster-c6erzx4ndlhp.eu-central-1.rds.amazonaws.com",
+        "port": 3306
+      },
+      "slave": {
+        "user": "centribot",
+        "password": "Centribot2020",
+        "dbname": "centridesk_shared",
+        "host": "tf-centribal-pre-centribot-db.cluster-ro-c6erzx4ndlhp.eu-central-1.rds.amazonaws.com",
+        "port": 3306
+      }
+    },
+    "centridesk": {
+      "pool": false,
+      "master": {
+        "user": "centribot",
+        "password": "Centribot2020",
+        "dbname": "centridesk_shared",
+        "host": "tf-centribal-pre-centribot-db.cluster-c6erzx4ndlhp.eu-central-1.rds.amazonaws.com",
+        "port": 3306
+      },
+      "slave": {
+        "user": "centribot",
+        "password": "Centribot2020",
+        "dbname": "centridesk_shared",
+        "host": "tf-centribal-pre-centribot-db.cluster-ro-c6erzx4ndlhp.eu-central-1.rds.amazonaws.com",
+        "port": 3306
+      }
+    },
+    "centribot": {
+      "pool": false,
+      "master": {
+        "user": "centribot",
+        "password": "Centribot2020",
+        "dbname": "centribot",
+        "host": "tf-centribal-pre-centribot-db.cluster-c6erzx4ndlhp.eu-central-1.rds.amazonaws.com",
+        "port": 3306
+      },
+      "slave": {
+        "user": "centribot",
+        "password": "Centribot2020",
+        "dbname": "centribot",
+        "host": "tf-centribal-pre-centribot-db.cluster-ro-c6erzx4ndlhp.eu-central-1.rds.amazonaws.com",
+        "port": 3306
+      }
+    }
+  },
+  "platform": {
+    "kubernetes": true,
+    "rabbitmq": {
+      "host": "b-363d6944-fd15-43ee-a406-d7e4b53661ff.mq.eu-central-1.amazonaws.com",
+      "port": 5671,
+      "vhost": "/",
+      "user": "centribot",
+      "password": "Omnichannel2020!"
+    },
+    "centribot": {
+      "url": "http://centribot-backend.preproduction-platform.svc.cluster.local",
+      "platform": "centridesk"
+    },
+    "websockets": {
+      "url": "wss://ws-server-001.pre.centribal.com"
+    },
+    "centridesk": {
+      "url": "https://backcentridesk.pre.centribal.com",
+      "platform": "centridesk"
+    }
+  },
+  "providers": {
+    "aws": {
+      "buckets": {
+        "key_id": "AKIAUBBNN5W3ERX5R5UT",
+        "key": "e1avhL5Te6l9lcqgKiFtexT5r7kHh02v6kmOvZw8"
+      }
+    }
+  },
+  "logs": {
+    "jira_create": true,
+    "log_json_format": true,
+    "log_level": "ERROR"
+  }
+}

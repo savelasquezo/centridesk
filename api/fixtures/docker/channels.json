@@ -1,0 +1,57 @@
+[
+  {
+    "model": "api.channels",
+    "pk": 1,
+    "fields": {
+      "unique_id": "49646b17a76042fcbc4d40efdd2ebc30",
+      "name": "Chat Web",
+      "platform": "chatweb",
+      "created_at": 1629402739,
+      "active": true
+    }
+  },
+  {
+    "model": "api.channels",
+    "pk": 2,
+    "fields": {
+      "unique_id": "b7aa1136b454448d8ccaeaff6f9450fc",
+      "name": "Whatsapp",
+      "platform": "whatsapp",
+      "created_at": 1629402739,
+      "active": true
+    }
+  },
+  {
+    "model": "api.channels",
+    "pk": 3,
+    "fields": {
+      "unique_id": "05c8c4b6c74241158fa4f00e3a5e0525",
+      "name": "Messenger",
+      "platform": "messenger",
+      "created_at": 1629402739,
+      "active": true
+    }
+  },
+  {
+    "model": "api.channels",
+    "pk": 4,
+    "fields": {
+      "unique_id": "c221ea086c4141ccb48f7e38cc1ac9d4",
+      "name": "Telegram",
+      "platform": "telegram",
+      "created_at": 1629402739,
+      "active": true
+    }
+  },
+  {
+    "model": "api.channels",
+    "pk": 5,
+    "fields": {
+      "unique_id": "ba14400e2259406bbd136fa602bb8c0d",
+      "name": "Instagram",
+      "platform": "instagram",
+      "created_at": 1629402739,
+      "active": true
+    }
+  }
+]

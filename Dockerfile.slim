@@ -1,0 +1,63 @@
+# syntax=docker/dockerfile:1.7-labs
+
+FROM python:3.6 as builder
+
+RUN mkdir /code
+WORKDIR /code
+
+# set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# install system dependencies
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends ffmpeg procps libmariadb3 libkrb5-3 \
+       libgfortran5 libcairo2 libglib2.0-0 libpango-1.0-0 libpangocairo-1.0-0 \
+       libevent-openssl-2.1-7 libcurl4 libgnutls-openssl27 libssl1.1 \
+       gcc git libevent-dev libcurl4-openssl-dev libgnutls28-dev libssl-dev libmariadb-dev
+
+COPY . /code
+ENV PIP_CONFIG_FILE=/code/pip.conf
+RUN pip install --upgrade pip
+
+# install python dependencies
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /wheels -r requirements.txt
+
+# pull official base image
+FROM python:3.6-slim
+
+RUN mkdir /code
+WORKDIR /code
+
+# create the app user
+RUN addgroup --system centribal && adduser --system --group centribal
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg libmariadb3 libkrb5-3 \
+       libgfortran5 libcairo2 libglib2.0-0 libpango-1.0-0 libpangocairo-1.0-0 \
+       libevent-openssl-2.1-7 libcurl4 libgnutls-openssl27 libssl1.1
+
+COPY --from=builder /wheels /wheels
+COPY --from=builder /code/requirements.txt .
+
+RUN pip install --upgrade pip
+RUN pip install --no-cache /wheels/*
+
+COPY --exclude=pip.conf . /code
+
+RUN chown -R centribal:centribal /code \
+    && mkdir /var/tmp/django_cache \
+    && chown centribal:centribal /var/tmp/django_cache
+
+USER centribal
+
+EXPOSE 8080
+
+ENV OTEL_EXCLUDED_HTTP_URLS=api/v1/status
+ENV OTEL_SERVICE_NAME=centridesk
+ENV OTEL_TRACES_EXPORTER=otlp
+ENV OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://opentelemetry-collector-collector.kube-system.svc.cluster.local:4317
+ENV DJANGO_SETTINGS_MODULE=centridesk.settings
+
+CMD ["gunicorn", "-c", "gunicorn.py", "centridesk.wsgi:application", "--bind", "0.0.0.0:8080", "--workers", "3", "--worker-class", "gevent", "--worker-connections", "1000"]
+

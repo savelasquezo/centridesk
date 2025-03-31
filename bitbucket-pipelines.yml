@@ -1,0 +1,332 @@
+options:
+  docker: true
+  max-time: 120
+  size: 2x
+
+image:
+  name: 079167517156.dkr.ecr.eu-central-1.amazonaws.com/ciutils/base:latest
+  aws:
+    access-key: $AWS_ACCESS_KEY_ID_PREPRODUCTION
+    secret-key: $AWS_SECRET_ACCESS_KEY_PREPRODUCTION
+
+definitions:
+  services:
+    docker:
+      memory: 4096
+    db:
+      image: mysql:8.0
+      variables:
+        MYSQL_USER: $MYSQL_TEST_USER
+        MYSQL_PASSWORD: $MYSQL_TEST_PASSWORD
+        MYSQL_DATABASE: $MYSQL_TEST_DATABASE
+        MYSQL_RANDOM_ROOT_PASSWORD: 'yes'
+  caches:
+    docker-cache: ~/.docker
+
+  steps:
+    - step: &initial-config
+        runs-on:
+          - env.pre
+          - self.hosted
+          - linux
+        name: Initial Config
+        script:
+          - |
+            echo "BRANCH: $BITBUCKET_BRANCH"
+            source /scripts/functions.sh
+            case "$BITBUCKET_BRANCH" in
+                "master")
+                    get_release_version
+                    ;;
+                "release/preproduction")
+                    get_release_version --preid rc
+                    ;;
+                "devops/pipelines")
+                    get_release_version --preid devops
+                    ;;
+                *)
+                    get_release_version --preid dev
+                    ;;
+            esac
+        volumes:
+          - $HOME:/root
+          - $(pwd):/git
+        artifacts:
+          - pipeline.env
+          - sonar-project.properties
+
+    - step: &generate-docker-image
+        runs-on:
+          - env.pre
+          - self.hosted
+          - linux
+        name: Generate application image
+        script:
+          - source pipeline.env
+          - CODEARTIFACT_TOKEN=$(docker run --rm -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID_PREPRODUCTION} -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY_PREPRODUCTION} amazon/aws-cli:2.15.40 codeartifact get-authorization-token --domain centribal --domain-owner 079167517156 --region eu-central-1 --query authorizationToken --output text)
+          - echo -e "[global]\nextra-index-url = https://aws:${CODEARTIFACT_TOKEN}@centribal-079167517156.d.codeartifact.eu-central-1.amazonaws.com/pypi/pip/simple/" > pip.conf
+          - docker build -t ${ECR_DOCKER_REPO_NAME}:${BITBUCKET_COMMIT:0:7} . 
+          - docker save --output generated.docker ${ECR_DOCKER_REPO_NAME}:${BITBUCKET_COMMIT:0:7}
+        artifacts:
+          - generated.docker
+        services:
+          - docker
+        caches:
+          - docker
+
+    - step: &run-tests
+        runs-on:
+          - env.pre
+          - self.hosted
+          - linux
+        name: Run Tests
+        script:
+          - source pipeline.env
+          - touch coverage.xml
+          - docker load --input generated.docker
+          - docker run --rm -e AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION_PREPRODUCTION} -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID_PREPRODUCTION} -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY_PREPRODUCTION} amazon/aws-cli:2.15.40 secretsmanager get-secret-value --secret-id preproduction-platform/$( echo ${HELM_REPO} | cut -d "/" -f 2) | jq -r '.SecretString | fromjson | .["config.json"]' > config.migrations.json
+          - |
+            echo "Check migrations for release/preproduction or master branchs: BITBUCKET_PR_DESTINATION_BRANCH=${BITBUCKET_PR_DESTINATION_BRANCH}"
+            case "${BITBUCKET_PR_DESTINATION_BRANCH}" in
+                "master" | "release/preproduction")
+                    docker run --rm -v $(pwd)/config.migrations.json:/code/config.json --entrypoint "/bin/bash" ${ECR_DOCKER_REPO_NAME}:${BITBUCKET_COMMIT:0:7} -c "python3 ./manage.py makemigrations --check"
+                    ;;
+            esac
+          - docker run --rm --user root --add-host db:$BITBUCKET_DOCKER_HOST_INTERNAL -v $(pwd)/config/config_docker.json:/code/config.json -v $(pwd)/coverage.xml:/code/coverage.xml --entrypoint "/bin/bash" ${ECR_DOCKER_REPO_NAME}:${BITBUCKET_COMMIT:0:7} -c "python3 -m coverage run manage.py test --noinput --failfast --keepdb && python3 -m coverage xml"
+        artifacts:
+          - coverage.xml
+        services:
+          - docker
+          - db
+        caches:
+          - docker            
+
+    - step: &sonar-analysis
+        runs-on:
+          - env.pre
+          - self.hosted
+          - linux
+        name: SonarQube Analysis
+        image: maven:3.3.9
+        script:
+          - pipe: sonarsource/sonarqube-scan:1.0.0
+            variables:
+              SONAR_HOST_URL: ${SONAR_HOST_URL}
+              SONAR_TOKEN: ${SONAR_TOKEN}
+
+    - step: &sonar-quality-gate
+        runs-on:
+          - env.pre
+          - self.hosted
+          - linux
+        name: Check Quality Gate on SonarQube
+        max-time: 5
+        script:
+          - pipe: sonarsource/sonarqube-quality-gate:1.1.0
+            variables:
+              SONAR_HOST_URL: ${SONAR_HOST_URL}
+              SONAR_TOKEN: ${SONAR_TOKEN}
+
+    - step: &docker-push-ecr
+        runs-on:
+          - env.pre
+          - self.hosted
+          - linux
+        name: Push container to AWS ECR registry
+        script:
+          - source pipeline.env
+          - docker load --input generated.docker
+          - docker tag ${ECR_DOCKER_REPO_NAME}:${BITBUCKET_COMMIT:0:7} ${ECR_DOCKER_REPO_NAME}:${APP_VERSION}
+          - pipe: atlassian/aws-ecr-push-image:2.4.0
+            variables:
+              AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID_PREPRODUCTION}
+              AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY_PREPRODUCTION}
+              AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION_PREPRODUCTION}
+              IMAGE_NAME: ${ECR_DOCKER_REPO_NAME}
+              TAGS: ${BITBUCKET_COMMIT:0:7} ${APP_VERSION}
+          - echo -n > generated.docker && echo "Truncate generated.docker to improve next steps"
+        services:
+          - docker
+        caches:
+          - docker
+        artifacts:
+          - generated.docker
+
+    - step: &helm-chart-generation
+        runs-on:
+          - env.pre
+          - self.hosted
+          - linux
+        name: Package helm chart & push to aws ecr
+        image:
+          name: 079167517156.dkr.ecr.eu-central-1.amazonaws.com/ciutils/package-helm:latest
+          aws:
+            access-key: $AWS_ACCESS_KEY_ID_PREPRODUCTION
+            secret-key: $AWS_SECRET_ACCESS_KEY_PREPRODUCTION
+        script:
+          - |
+            export $(cat pipeline.env | xargs) && echo "APP_VERSION-> $APP_VERSION"       
+            export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID_PREPRODUCTION
+            export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY_PREPRODUCTION
+            export AWS_REGION=$AWS_DEFAULT_REGION_PREPRODUCTION
+            export AWS_DOMAIN_OWNER=$AWS_DOMAIN_OWNER
+            export HELM_REPO=$HELM_REPO
+            export APP_VERSION=$APP_VERSION
+            export DIR_BASE=chart
+            /scripts/entrypoint.sh
+
+    - step: &generate-changelog
+        runs-on:
+          - env.pre
+          - self.hosted
+          - linux
+        name: Generate Changelog
+        script:
+          - |
+            export $(cat pipeline.env | xargs) && echo "APP_VERSION-> $APP_VERSION"
+            source /scripts/functions.sh
+            generate_changelog
+        volumes:
+          - $HOME:/root
+
+    - step: &deploy-preproduction
+        runs-on:
+          - env.pre
+          - self.hosted
+          - linux
+        name: Deploy to PRE-PRODUCTION
+        image:
+          name: 079167517156.dkr.ecr.eu-central-1.amazonaws.com/ciutils/deploy-gitops:latest
+          aws:
+            access-key: $AWS_ACCESS_KEY_ID_PREPRODUCTION
+            secret-key: $AWS_SECRET_ACCESS_KEY_PREPRODUCTION
+        script:
+          - |
+            export $(cat pipeline.env | xargs) && echo "APP_VERSION-> $APP_VERSION"
+            export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID_PREPRODUCTION
+            export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY_PREPRODUCTION
+            export AWS_REGION=$AWS_DEFAULT_REGION_PREPRODUCTION
+            export GITOPS_REPO_TOKEN=$PRE_GITOPS_REPO_TOKEN
+            export GITOPS_REPO_EMAIL=$PRE_GITOPS_REPO_EMAIL                      
+            export EKS_CLUSTER_NAME=tf-centribal-pre-eks
+            export REPO_GIT_OPS_NAME=pre-centribal-platform-gitops
+            export BITBUCKET_ORG_REPO=bimyoubcn
+            export ARGO_APP_FILES_PATH=argocd
+            export NAMESPACE_DEPLOY=preproduction-platform
+            /scripts/entrypoint.sh
+
+    - step: &deploy-production
+        runs-on:
+          - env.pro
+          - self.hosted
+          - linux
+        name: Deploy to PRODUCTION
+        image:
+          name: 079167517156.dkr.ecr.eu-central-1.amazonaws.com/ciutils/deploy-gitops:latest
+          aws:
+            # Usa las key de PRE solo para hacer pull image
+            access-key: $AWS_ACCESS_KEY_ID_PREPRODUCTION
+            secret-key: $AWS_SECRET_ACCESS_KEY_PREPRODUCTION
+        script:
+          - |
+            export $(cat pipeline.env | xargs) && echo "APP_VERSION-> $APP_VERSION"
+            export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID_PRODUCTION
+            export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY_PRODUCTION
+            export AWS_REGION=$AWS_DEFAULT_REGION_PRODUCTION
+            export GITOPS_REPO_TOKEN=$PRO_GITOPS_REPO_TOKEN
+            export GITOPS_REPO_EMAIL=$PRO_GITOPS_REPO_EMAIL               
+            export EKS_CLUSTER_NAME=tf-centribal-pro-eks
+            export REPO_GIT_OPS_NAME=pro-centribal-platform-gitops
+            export BITBUCKET_ORG_REPO=bimyoubcn
+            export ARGO_APP_FILES_PATH=argocd
+            export NAMESPACE_DEPLOY=production-platform
+            /scripts/entrypoint.sh
+
+    - step: &post-deploy-tests
+        runs-on:
+          - env.pre
+          - self.hosted
+          - linux
+        name: Post deploy tests
+        script:
+          - export $(cat pipeline.env | xargs)
+          - echo "Post-Deploy tests run succesfully"
+
+    - step: &notify-teams
+        runs-on:
+          - env.pre
+          - self.hosted
+          - linux
+        name: Notify MS Teams Channel
+        image:
+          name: 079167517156.dkr.ecr.eu-central-1.amazonaws.com/ciutils/ms-teams-notify:latest
+          aws:
+            access-key: $AWS_ACCESS_KEY_ID_PREPRODUCTION
+            secret-key: $AWS_SECRET_ACCESS_KEY_PREPRODUCTION
+        script:
+          - export $(cat pipeline.env | xargs)
+          - /scripts/sendmsg.py
+
+pipelines:
+  branches:
+    development/*:
+      - step: *initial-config
+      - step: *generate-docker-image
+      - step: *run-tests
+      - step: *sonar-analysis
+
+    release/*:
+      - step: *initial-config
+      - step: *generate-docker-image
+      - step: *run-tests
+      - step: *sonar-analysis
+      - step: *sonar-quality-gate
+
+    devops/pipelines:
+      - step: *initial-config
+      - step: *generate-docker-image
+      - step: *run-tests
+      - step: *sonar-analysis
+      - step: *sonar-quality-gate
+      - step: *docker-push-ecr
+      - step: *helm-chart-generation
+      - step: *generate-changelog
+      - step: *deploy-preproduction
+      - parallel:
+          - step: *notify-teams
+          - step: *post-deploy-tests
+
+    release/preproduction:
+      - step: *initial-config
+      - step: *generate-docker-image
+      - step: *run-tests
+      - step: *sonar-analysis
+      - step: *sonar-quality-gate
+      - step: *docker-push-ecr
+      - step: *helm-chart-generation
+      - step: *generate-changelog
+      - step: *deploy-preproduction
+      - parallel:
+          - step: *notify-teams
+          - step: *post-deploy-tests
+
+    master:
+      - step: *initial-config
+      - step: *generate-docker-image
+      - step: *run-tests
+      - step: *sonar-analysis
+      - step: *sonar-quality-gate
+      - step: *docker-push-ecr
+      - step: *helm-chart-generation
+      - step: *generate-changelog
+      - step: *deploy-production
+      - parallel:
+          - step: *notify-teams
+          - step: *post-deploy-tests
+  pull-requests:
+    "**":
+      - step: *initial-config
+      - step: *generate-docker-image
+      - step: *run-tests
+      - step: *sonar-analysis
+      - step: *sonar-quality-gate

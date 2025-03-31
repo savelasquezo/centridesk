@@ -1,0 +1,42 @@
+FROM python:3.6.15-alpine3.15 AS build
+
+ADD requirements.txt /app/requirements.txt
+
+RUN set -ex \
+    && apk add --no-cache --virtual .build-deps mariadb-dev build-base libffi-dev freetype-dev jpeg-dev libwebp openjpeg-dev zlib-dev \
+    && python -m venv /env \
+    && /env/bin/pip install --upgrade pip \
+    && /env/bin/pip install --no-cache-dir -r /app/requirements.txt \
+    && runDeps="$(scanelf --needed --nobanner --recursive /env \
+        | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
+        | sort -u \
+        | xargs -r apk info --installed \
+        | sort -u)" \
+    && apk add --virtual rundeps $runDeps \
+    && apk del .build-deps
+
+FROM python:3.6.15-alpine3.15
+
+COPY --from=build /env /env
+
+RUN set -ex \
+    && apk add --no-cache --virtual .build-deps cairo glib font-alias font-util freetype jpeg libffi libwebp mariadb-dev openjpeg pango zlib 
+
+COPY api /app/api
+COPY api_centribot /app/api_centribot
+COPY centridesk /app/centridesk
+COPY processes /app/processes
+COPY shared /app/shared
+COPY src /app/src
+COPY utils /app/utils
+COPY manage.py /app/manage.py
+WORKDIR /app/
+
+ENV VIRTUAL_ENV /env
+ENV PATH /env/bin:$PATH
+
+EXPOSE 8080
+
+CMD ["/env/bin/gunicorn", "--bind", ":8080", "--worker-class=gevent", "--workers", "3", "--timeout=120", "centridesk.wsgi:application"]
+##CMD ["/env/bin/python3", "manage.py", "runserver", "0.0.0.0:8080"]
+
